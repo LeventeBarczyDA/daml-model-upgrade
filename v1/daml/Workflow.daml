@@ -1,0 +1,34 @@
+module Workflow where 
+
+import DA.Set qualified as Set 
+import DA.Time qualified as Time
+import Asset 
+
+template UnsignedAsset -- This template is irrelevant, don't care how the multi-sig asset was signed
+  with 
+    signatories : Set.Set Party 
+    controllers : Set.Set Party 
+    notYetSigned: Set.Set Party 
+    userAdmin : Party 
+    name : Text 
+    noticePeriod : Time.RelTime
+  where 
+    signatory signatories, userAdmin 
+    observer notYetSigned
+
+    choice Sign: Either (ContractId UnsignedAsset) (ContractId Asset)
+        with 
+          signer: Party 
+      controller signer 
+        do 
+          assert $ signer `Set.member` notYetSigned 
+          if notYetSigned == Set.singleton signer 
+          then Right <$> create Asset 
+            with 
+              counter = 1
+              ..
+          else Left <$> create UnsignedAsset 
+            with 
+              notYetSigned = Set.delete signer notYetSigned 
+              signatories = Set.insert signer signatories
+              ..

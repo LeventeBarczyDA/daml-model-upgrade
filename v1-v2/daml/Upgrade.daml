@@ -1,0 +1,40 @@
+module Upgrade where 
+
+import V1.Asset qualified
+import V2.Asset qualified
+
+import DA.Set qualified as Set
+
+template UserAdminUpgradeRights 
+  with 
+    party: Party 
+    userAdmin: Party 
+  where 
+    signatory party 
+
+    controller userAdmin can 
+      nonconsuming ReSignUpgradingAsset: Either (ContractId UpgradingAsset) (ContractId V2.Asset.Asset)
+        with 
+          upgradingAssetId: ContractId UpgradingAsset 
+        do 
+          exercise upgradingAssetId ReSign with signer = party 
+
+template UpgradingAsset 
+  with 
+    v2Asset: V2.Asset.Asset 
+    v1FrozenAssetId: ContractId V1.Asset.FrozenAsset
+    signatories: Set.Set Party 
+  where 
+    signatory v2Asset.userAdmin, signatories 
+
+    choice ReSign: Either (ContractId UpgradingAsset) (ContractId V2.Asset.Asset) 
+        with 
+          signer: Party 
+      controller v2Asset.userAdmin, signer -- This ensures that only the userAdmin, in the context of the above rights, can execute this choice
+        do 
+          let next = this with signatories = Set.insert signer signatories
+          if next.signatories == v2Asset.signatories 
+          then Right <$> do 
+            archive v1FrozenAssetId -- This will *only* work in a context where we have everybody's signature. 
+            create v2Asset 
+          else Left <$> create next

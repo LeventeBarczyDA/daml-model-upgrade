@@ -1,0 +1,31 @@
+module Main where
+
+import Daml.Script
+import DA.Set qualified as Set 
+import DA.Time qualified as Time
+import Asset
+import Workflow
+
+setup : Script (ContractId Asset)
+setup = script do
+  [alice, bob, charlie, userAdmin] <- mapA (\name -> 
+    allocatePartyWithHint name (PartyIdHint name)) [
+      "Alice", "Bob", "Charlie", "UserAdmin"]
+
+  unsigned <- submit userAdmin $ 
+    createCmd UnsignedAsset
+      with 
+        signatories = Set.empty 
+        controllers = Set.singleton charlie 
+        notYetSigned = Set.fromList [alice, bob]
+        userAdmin 
+        name = "Token"
+        noticePeriod = Time.days 14 
+
+  Left unsigned <- submit alice $ 
+    exerciseCmd unsigned Sign with signer = alice 
+
+  Right signed <- submit bob $ 
+    exerciseCmd unsigned Sign with signer = bob
+
+  return signed

@@ -1,0 +1,83 @@
+module Asset where 
+
+import DA.Set qualified as Set
+import DA.Time qualified as Time (addRelTime, RelTime)
+
+type AssetId = ContractId Asset
+
+template Asset -- multi-signatory asset
+  with
+    signatories : Set.Set Party
+    controllers : Set.Set Party
+    userAdmin : Party
+    name   : Text
+    counter : Int
+    noticePeriod: Time.RelTime
+  where
+    ensure name /= "" && counter >= 1
+    signatory signatories, userAdmin
+    observer controllers
+    choice CreateSomething: (ContractId Something, ContractId Asset) 
+        with 
+          creator: Party 
+      controller creator
+        do 
+          next <- create this with counter = counter + 1 
+          thing <- create Something with .. 
+          return (thing, next)
+
+    controller userAdmin can 
+      Freeze: ContractId FrozenAsset 
+        with 
+          reason: Text 
+        do 
+          frozen <- getTime
+          create FrozenAsset 
+            with 
+              asset = this 
+              ..
+
+template FrozenAsset 
+  with 
+    asset: Asset 
+    reason: Text 
+    frozen: Time 
+  where 
+    signatory asset.userAdmin, asset.signatories 
+    observer asset.controllers 
+
+    controller asset.userAdmin can 
+      Thaw: ContractId Asset 
+        do create asset  
+
+      PermaFreeze: ContractId PermaFrost 
+        do 
+          permaFrozen <- getTime 
+          assertMsg"Still within notice period!!" 
+            $ frozen `Time.addRelTime` asset.noticePeriod < permaFrozen
+
+          create PermaFrost with .. 
+          
+template PermaFrost 
+  with 
+    asset: Asset 
+    reason: Text 
+    frozen: Time 
+    permaFrozen: Time 
+  where 
+    signatory asset.userAdmin, asset.signatories 
+    observer asset.controllers 
+
+    controller asset.userAdmin can 
+      ArchiveWhenever: () do pure ()
+
+template Something 
+  with 
+    signatories : Set.Set Party
+    controllers : Set.Set Party
+    creator : Party 
+    userAdmin : Party
+    name   : Text
+    counter : Int
+  where 
+    signatory signatories, userAdmin, creator
